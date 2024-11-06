@@ -1,0 +1,55 @@
+services:
+  traefik:
+    image: "traefik:v3.1"
+    container_name: "traefik"
+    command:
+      - "--api.dashboard=true"
+      - "--log.level=INFO"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`localhost`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.service=api@internal"
+    networks:
+      - support-net
+
+  api1: &api
+    build: .
+    image: leandromandrade/sample-traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.fastify.rule=PathPrefix(`/fastify`)"
+      - "traefik.http.routers.fastify.entrypoints=web"
+      - "traefik.http.routers.fastify.middlewares=strip-api,ratelimit"
+      - "traefik.http.middlewares.strip-api.stripprefix.prefixes=/fastify"
+      # load balancer
+      - "traefik.http.routers.fastify.service=fastify-service"
+      - "traefik.http.services.fastify-service.loadbalancer.server.port=8080"
+      # health check
+      - "traefik.http.services.fastify-service.loadbalancer.healthcheck.path=/"
+      - "traefik.http.services.fastify-service.loadbalancer.healthcheck.interval=10s"
+      - "traefik.http.services.fastify-service.loadbalancer.healthcheck.timeout=3s"
+      # rate limit
+      - "traefik.http.middlewares.ratelimit.ratelimit.average=100"
+      - "traefik.http.middlewares.ratelimit.ratelimit.burst=10"
+    environment:
+      PORT: 8080
+    deploy:
+      mode: replicated
+      replicas: 2
+    networks:
+      - support-net
+  # api2:
+  #   <<: *api
+  #   container_name: fastify-cjs-2
+
+networks:
+  support-net:
+    driver: bridge
